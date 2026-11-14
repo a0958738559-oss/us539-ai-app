@@ -1,1 +1,494 @@
 
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>美國天天樂539 AI預測 V2</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#eef4fa;color:#18334c;font-family:Arial,"Noto Sans TC",sans-serif}
+header{background:#164d78;color:white;text-align:center;padding:20px 10px}
+h1{font-size:23px;margin:5px}
+main{max-width:850px;margin:auto;padding:12px}
+.card{background:white;border-radius:12px;padding:16px;margin:12px 0;box-shadow:0 2px 8px #0001}
+button{background:#17679c;color:white;border:0;border-radius:8px;padding:11px 13px;margin:5px 3px;cursor:pointer;font-size:15px}
+input,select{padding:9px;margin:5px 2px;max-width:100%;border:1px solid #bbb;border-radius:6px}
+input[type=number]{width:58px}
+.ball{display:inline-flex;align-items:center;justify-content:center;background:#17679c;color:white;border-radius:50%;width:38px;height:38px;margin:3px;font-weight:bold}
+.result{background:#edf7ff;padding:12px;margin:10px 0;border-radius:9px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{border-bottom:1px solid #ddd;padding:8px;text-align:center;white-space:nowrap}
+th{background:#e6f1fa}
+.scroll{overflow-x:auto}
+small,.note{color:#64748b;font-size:13px;line-height:1.7}
+.good{color:#16803c;font-weight:bold}
+.warn{color:#b45309}
+h3{margin-top:4px}
+</style>
+</head>
+<body>
+
+<header>
+<h1>🇺🇸 美國天天樂539 AI預測</h1>
+<div>V2.0｜200期統計・預測紀錄・開獎比對</div>
+</header>
+
+<main>
+
+<section class="card">
+<h3>📂 歷史資料管理</h3>
+<input type="file" id="file" accept=".csv,text/csv">
+<br>
+<button onclick="importCSV()">匯入CSV</button>
+<button onclick="exportCSV()">下載CSV備份</button>
+<p id="status">讀取中...</p>
+<small>CSV格式：date,n1,n2,n3,n4,n5<br>
+匯入新資料會與原有資料合併，同日期資料以新匯入內容為準。</small>
+</section>
+
+<section class="card">
+<h3>➕ 手動新增開獎資料</h3>
+<input type="date" id="date">
+<div id="inputs"></div>
+<button onclick="addDraw()">儲存開獎號碼</button>
+<p class="note">請先核對開獎日期與5個實際號碼。</p>
+</section>
+
+<section class="card">
+<h3>📊 歷史統計分析</h3>
+<select id="period">
+<option value="30">最近30期</option>
+<option value="60">最近60期</option>
+<option value="100">最近100期</option>
+<option value="200" selected>最近200期</option>
+</select>
+<button onclick="analyze()">開始分析</button>
+<div id="analysis"></div>
+</section>
+
+<section class="card">
+<h3>🔥 01～39號碼詳細統計</h3>
+<div id="details" class="scroll">
+<p class="note">按下「開始分析」顯示統計表。</p>
+</div>
+</section>
+
+<section class="card">
+<h3>🎯 下一期參考選號</h3>
+<button onclick="predict()">產生並儲存5組號碼</button>
+<div id="prediction"></div>
+<p class="note">依歷史頻率與遺漏資料產生隨機參考組合，並非真正能預知開獎的AI模型，不保證中獎。</p>
+</section>
+
+<section class="card">
+<h3>🏆 預測與開獎號碼比對</h3>
+<p class="note">先產生預測組合，再輸入下一期實際開獎資料。系統會比對預測時尚未開出的下一筆紀錄。</p>
+<button onclick="compare()">比對最新預測</button>
+<div id="comparison"></div>
+</section>
+
+<section class="card">
+<h3>📋 歷次預測與比對紀錄</h3>
+<button onclick="exportPredictions()">下載預測紀錄JSON</button>
+<div id="predictionHistory"></div>
+</section>
+
+<section class="card">
+<h3>📜 最近20期開獎紀錄</h3>
+<div class="scroll">
+<table>
+<thead><tr><th>日期</th><th colspan="5">開獎號碼</th></tr></thead>
+<tbody id="records"></tbody>
+</table>
+</div>
+</section>
+
+</main>
+
+<script>
+"use strict";
+
+const KEY="us539_data";
+const PKEY="us539_predictions_v2";
+const $=id=>document.getElementById(id);
+
+function read(key){
+try{
+let x=JSON.parse(localStorage.getItem(key)||"[]");
+return Array.isArray(x)?x:[];
+}catch(e){return []}
+}
+
+let data=read(KEY);
+let predictions=read(PKEY);
+
+$("inputs").innerHTML=Array.from(
+{length:5},(_,i)=>
+'<input type="number" min="1" max="39" id="n'+i+'" placeholder="'+(i+1)+'">'
+).join("");
+
+function valid(nums){
+return Array.isArray(nums)&&nums.length===5&&
+nums.every(n=>Number.isInteger(n)&&n>=1&&n<=39)&&
+new Set(nums).size===5;
+}
+
+function dateOK(d){
+if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return false;
+let x=new Date(d+"T00:00:00Z");
+return !isNaN(x.getTime())&&x.toISOString().slice(0,10)===d;
+}
+
+function normalize(){
+let map=new Map();
+data.forEach(r=>{
+if(r&&dateOK(r.date)&&valid(r.nums)){
+map.set(r.date,{
+date:r.date,
+nums:[...r.nums].sort((a,b)=>a-b)
+});
+}
+});
+data=[...map.values()].sort((a,b)=>b.date.localeCompare(a.date));
+}
+
+function persist(){
+try{
+localStorage.setItem(KEY,JSON.stringify(data));
+localStorage.setItem(PKEY,JSON.stringify(predictions));
+return true;
+}catch(e){
+alert("儲存失敗，請確認瀏覽器儲存空間並備份資料。");
+return false;
+}
+}
+
+function save(){
+normalize();
+persist();
+show();
+}
+
+function balls(nums){
+return nums.map(n=>
+'<span class="ball">'+String(n).padStart(2,"0")+'</span>'
+).join("");
+}
+
+function show(){
+normalize();
+$("status").textContent=
+"已儲存 "+data.length+" 期"+
+(data.length?"，最新："+data[0].date:"");
+
+$("records").innerHTML=data.slice(0,20).map(r=>
+"<tr><td>"+r.date+"</td>"+
+r.nums.map(n=>"<td>"+String(n).padStart(2,"0")+"</td>").join("")+
+"</tr>"
+).join("");
+
+showPredictionHistory();
+}
+
+function importCSV(){
+let f=$("file").files[0];
+if(!f)return alert("請先選擇CSV檔案");
+
+let reader=new FileReader();
+
+reader.onload=()=>{
+let rows=String(reader.result)
+.replace(/^\uFEFF/,"").trim().split(/\r?\n/);
+
+let map=new Map(data.map(r=>[r.date,r]));
+let count=0,invalid=0;
+
+rows.forEach(line=>{
+let p=line.split(",").map(x=>x.trim().replace(/^"|"$/g,""));
+let d=(p[0]||"").replace(/\//g,"-");
+let nums=p.slice(1,6).map(x=>x===""?NaN:Number(x));
+
+if(dateOK(d)&&valid(nums)){
+map.set(d,{date:d,nums:nums.sort((a,b)=>a-b)});
+count++;
+}else if(line.trim()&&!/^date\s*,/i.test(line)){
+invalid++;
+}
+});
+
+if(!count)return alert("CSV沒有有效資料，請檢查格式");
+
+data=[...map.values()];
+save();
+alert("成功讀取 "+count+" 筆，略過 "+invalid+" 行。");
+};
+
+reader.readAsText(f,"UTF-8");
+}
+
+function addDraw(){
+let d=$("date").value;
+let nums=Array.from({length:5},(_,i)=>{
+let v=$("n"+i).value;
+return v===""?NaN:Number(v);
+});
+
+if(!dateOK(d)||!valid(nums)){
+return alert("請輸入有效日期及5個不同的01～39號碼");
+}
+
+if(data.some(r=>r.date===d)&&
+!confirm("此日期已有資料，確定覆蓋？"))return;
+
+data=data.filter(r=>r.date!==d);
+data.push({date:d,nums:nums.sort((a,b)=>a-b)});
+save();
+alert("開獎資料儲存成功");
+}
+
+function download(name,content,type){
+let url=URL.createObjectURL(new Blob([content],{type}));
+let a=document.createElement("a");
+a.href=url;
+a.download=name;
+document.body.appendChild(a);
+a.click();
+a.remove();
+setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+
+function exportCSV(){
+if(!data.length)return alert("目前沒有歷史資料");
+
+let csv="\uFEFFdate,n1,n2,n3,n4,n5\n"+
+data.map(r=>[r.date,...r.nums].join(",")).join("\n");
+
+download("us539_history.csv",csv,"text/csv;charset=utf-8");
+}
+
+function stats(){
+normalize();
+let rows=data.slice(0,Number($("period").value));
+let freq=Array(40).fill(0);
+let miss=Array(40).fill(rows.length);
+let odd=0,big=0,sum=0,pairs=0;
+let sums=[];
+
+rows.forEach((r,i)=>{
+let total=0;
+
+r.nums.forEach(n=>{
+freq[n]++;
+if(miss[n]===rows.length)miss[n]=i;
+if(n%2)odd++;
+if(n>=20)big++;
+sum+=n;
+total+=n;
+});
+
+sums.push(total);
+
+for(let j=1;j<5;j++){
+if(r.nums[j]===r.nums[j-1]+1)pairs++;
+}
+});
+
+let rank=Array.from({length:39},(_,i)=>i+1)
+.sort((a,b)=>freq[b]-freq[a]||a-b);
+
+return {rows,freq,miss,odd,big,sum,pairs,sums,rank};
+}
+
+function analyze(){
+if(!data.length)return alert("請先匯入歷史資料");
+
+let s=stats(),t=s.rows.length;
+let missing=[...s.rank].sort(
+(a,b)=>s.miss[b]-s.miss[a]||a-b
+);
+
+let minSum=Math.min(...s.sums);
+let maxSum=Math.max(...s.sums);
+
+$("analysis").innerHTML=
+'<div class="result">'+
+'<b>實際分析：'+t+'期</b><br>'+
+'奇數：'+s.odd+'　偶數：'+(t*5-s.odd)+'<br>'+
+'小號01～19：'+(t*5-s.big)+'<br>'+
+'大號20～39：'+s.big+'<br>'+
+'平均和值：'+(s.sum/t).toFixed(2)+'<br>'+
+'最低和值：'+minSum+'　最高和值：'+maxSum+'<br>'+
+'連號相鄰配對：'+s.pairs+
+'</div>'+
+'<h4>🔥 熱門前10號</h4>'+balls(s.rank.slice(0,10))+
+'<h4>❄️ 冷門前10號</h4>'+balls([...s.rank].reverse().slice(0,10))+
+'<h4>⏳ 遺漏最高前10號</h4>'+balls(missing.slice(0,10));
+
+$("details").innerHTML=
+'<table><thead><tr>'+
+'<th>號碼</th><th>出現次數</th><th>出現率</th><th>遺漏期數</th>'+
+'</tr></thead><tbody>'+
+Array.from({length:39},(_,i)=>i+1).map(n=>
+'<tr><td>'+String(n).padStart(2,"0")+'</td>'+
+'<td>'+s.freq[n]+'</td>'+
+'<td>'+(s.freq[n]/t*100).toFixed(1)+'%</td>'+
+'<td>'+s.miss[n]+'</td></tr>'
+).join("")+
+'</tbody></table>';
+}
+
+function predict(){
+if(data.length<10){
+return alert("至少需要10期歷史資料");
+}
+
+let s=stats();
+let missing=[...s.rank].sort(
+(a,b)=>s.miss[b]-s.miss[a]||a-b
+);
+
+let pool=[
+...s.rank.slice(0,15),
+...missing.slice(0,15),
+...s.rank.slice(-15)
+];
+
+let groups=[],seen=new Set(),tries=0;
+
+while(groups.length<5&&tries++<500){
+let nums=[];
+
+while(nums.length<5){
+let n=pool[Math.floor(Math.random()*pool.length)];
+if(!nums.includes(n))nums.push(n);
+}
+
+nums.sort((a,b)=>a-b);
+let key=nums.join("-");
+
+if(!seen.has(key)){
+seen.add(key);
+groups.push(nums);
+}
+}
+
+let record={
+id:Date.now(),
+baseDate:data[0].date,
+created:new Date().toISOString(),
+period:s.rows.length,
+groups:groups,
+targetDate:null,
+actual:null
+};
+
+predictions.unshift(record);
+
+if(predictions.length>100)predictions=predictions.slice(0,100);
+
+persist();
+
+$("prediction").innerHTML=
+'<p class="good">已儲存本次5組參考號碼</p>'+
+'<p>分析資料截止：'+record.baseDate+'</p>'+
+groups.map((g,i)=>
+'<div class="result"><b>第'+(i+1)+'組</b><br>'+
+balls(g)+'</div>'
+).join("");
+
+showPredictionHistory();
+}
+
+function getResult(record){
+if(!record||!Array.isArray(record.groups))return null;
+
+let future=data.filter(r=>r.date>record.baseDate)
+.sort((a,b)=>a.date.localeCompare(b.date));
+
+if(!future.length)return null;
+
+let actual=future[0];
+
+return {
+date:actual.date,
+nums:actual.nums,
+hits:record.groups.map(g=>
+g.filter(n=>actual.nums.includes(n)).length
+)
+};
+}
+
+function compare(){
+if(!predictions.length){
+return alert("請先產生並儲存參考號碼");
+}
+
+let record=predictions[0];
+let result=getResult(record);
+
+if(!result){
+$("comparison").innerHTML=
+'<p class="warn">尚未找到預測基準日期之後的開獎資料。請先新增下一期實際號碼。</p>';
+return;
+}
+
+record.targetDate=result.date;
+record.actual=result.nums;
+persist();
+
+$("comparison").innerHTML=
+'<div class="result">'+
+'<b>預測基準日期：'+record.baseDate+'</b><br>'+
+'實際開獎日期：'+result.date+'<br>'+
+'實際號碼：<br>'+balls(result.nums)+
+'</div>'+
+record.groups.map((g,i)=>
+'<div class="result">'+
+'<b>第'+(i+1)+'組：命中 '+result.hits[i]+' 個</b><br>'+
+balls(g)+
+'</div>'
+).join("");
+
+showPredictionHistory();
+}
+
+function showPredictionHistory(){
+if(!predictions.length){
+$("predictionHistory").innerHTML=
+'<p class="note">尚無預測紀錄。</p>';
+return;
+}
+
+$("predictionHistory").innerHTML=
+predictions.slice(0,20).map((r,i)=>{
+let result=getResult(r);
+
+return '<div class="result">'+
+'<b>紀錄 '+(i+1)+'</b><br>'+
+'預測基準：'+r.baseDate+'<br>'+
+'分析期數：'+r.period+'<br>'+
+(result?
+'開獎日期：'+result.date+'<br>'+
+'命中數：'+result.hits.join("、"):
+'尚待下一期開獎')+
+'</div>';
+}).join("");
+}
+
+function exportPredictions(){
+if(!predictions.length){
+return alert("目前沒有預測紀錄");
+}
+
+download(
+"us539_predictions.json",
+JSON.stringify(predictions,null,2),
+"application/json;charset=utf-8"
+);
+}
+
+show();
+</script>
+</body>
+</html>
