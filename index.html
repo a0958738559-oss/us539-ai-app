@@ -1,1 +1,154 @@
-
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>美國天天樂539 AI預測</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#eef4fa;color:#18334c;font-family:Arial,sans-serif}
+header{background:#164d78;color:white;text-align:center;padding:20px}
+h1{font-size:23px}
+main{max-width:800px;margin:auto;padding:12px}
+.card{background:white;border-radius:12px;padding:16px;margin:12px 0;box-shadow:0 2px 8px #0001}
+button{background:#17679c;color:white;border:0;border-radius:8px;padding:11px;margin:5px;cursor:pointer}
+input,select{padding:9px;margin:4px;max-width:100%}
+input[type=number]{width:58px}
+.ball{display:inline-block;background:#17679c;color:white;border-radius:50%;width:38px;height:38px;line-height:38px;text-align:center;margin:3px;font-weight:bold}
+.result{background:#edf7ff;padding:12px;margin:10px 0;border-radius:9px}
+table{width:100%;border-collapse:collapse}
+td,th{border-bottom:1px solid #ddd;padding:7px;text-align:center}
+.scroll{overflow:auto}
+</style>
+</head>
+<body>
+<header>
+<h1>🇺🇸 美國天天樂539 AI預測</h1>
+歷史統計・手動更新・參考選號
+</header>
+<main>
+<div class="card">
+<h3>📂 歷史資料管理</h3>
+<input type="file" id="file" accept=".csv">
+<button onclick="importCSV()">匯入CSV</button>
+<button onclick="exportCSV()">下載CSV備份</button>
+<p id="status">尚未載入資料</p>
+<small>CSV格式：date,n1,n2,n3,n4,n5</small>
+</div>
+<div class="card">
+<h3>➕ 新增開獎資料</h3>
+<input type="date" id="date"><br>
+<div id="inputs"></div>
+<button onclick="addDraw()">儲存開獎號碼</button>
+</div>
+<div class="card">
+<h3>📊 歷史統計分析</h3>
+<select id="period">
+<option value="30">最近30期</option>
+<option value="60">最近60期</option>
+<option value="100">最近100期</option>
+<option value="200" selected>最近200期</option>
+</select>
+<button onclick="analyze()">開始分析</button>
+<div id="analysis"></div>
+</div>
+<div class="card">
+<h3>🎯 下一期參考號碼</h3>
+<button onclick="predict()">產生5組號碼</button>
+<div id="prediction"></div>
+<small>僅供統計參考，不保證中獎。</small>
+</div>
+<div class="card">
+<h3>📜 最近20期開獎紀錄</h3>
+<div class="scroll">
+<table><tbody id="records"></tbody></table>
+</div>
+</div>
+</main>
+<script>
+const KEY="us539_data";
+let data=[];
+try{data=JSON.parse(localStorage.getItem(KEY)||"[]");if(!Array.isArray(data))data=[]}catch(e){data=[]}
+const $=id=>document.getElementById(id);
+$("inputs").innerHTML=Array.from({length:5},(_,i)=>'<input type="number" min="1" max="39" id="n'+i+'" placeholder="'+(i+1)+'">').join("");
+function valid(a){return a.length===5&&a.every(n=>Number.isInteger(n)&&n>=1&&n<=39)&&new Set(a).size===5}
+function dateOK(d){return /^\d{4}-\d{2}-\d{2}$/.test(d)&&!isNaN(Date.parse(d))}
+function save(){data.sort((a,b)=>b.date.localeCompare(a.date));try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){alert("儲存失敗，請下載備份")}show()}
+function show(){
+data.sort((a,b)=>b.date.localeCompare(a.date));
+$("status").textContent="已儲存 "+data.length+" 期"+(data.length?"，最新："+data[0].date:"");
+$("records").innerHTML=data.slice(0,20).map(r=>"<tr><td>"+r.date+"</td>"+r.nums.map(n=>"<td>"+String(n).padStart(2,"0")+"</td>").join("")+"</tr>").join("")
+}
+function importCSV(){
+let f=$("file").files[0];if(!f)return alert("請先選擇CSV檔案");
+let reader=new FileReader();
+reader.onload=()=>{
+let rows=reader.result.replace(/^\uFEFF/,"").trim().split(/\r?\n/);
+let map=new Map(data.map(r=>[r.date,r]));
+let count=0;
+rows.forEach(line=>{
+let p=line.split(",").map(x=>x.trim().replace(/^"|"$/g,""));
+let d=p[0]?.replace(/\//g,"-");
+let nums=p.slice(1,6).map(Number);
+if(dateOK(d)&&valid(nums)){map.set(d,{date:d,nums:nums.sort((a,b)=>a-b)});count++}
+});
+if(!count)return alert("CSV沒有有效資料");
+data=[...map.values()];save();alert("成功匯入 "+count+" 筆");
+};
+reader.readAsText(f,"UTF-8")
+}
+function addDraw(){
+let d=$("date").value;
+let nums=Array.from({length:5},(_,i)=>Number($("n"+i).value));
+if(!dateOK(d)||!valid(nums))return alert("請輸入日期及5個不同的1～39號碼");
+if(data.some(r=>r.date===d)&&!confirm("此日期已有資料，要覆蓋嗎？"))return;
+data=data.filter(r=>r.date!==d);
+data.push({date:d,nums:nums.sort((a,b)=>a-b)});
+save();alert("儲存成功")
+}
+function exportCSV(){
+if(!data.length)return alert("沒有資料");
+let csv="\uFEFFdate,n1,n2,n3,n4,n5\n"+data.map(r=>[r.date,...r.nums].join(",")).join("\n");
+let url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
+let a=document.createElement("a");a.href=url;a.download="us539_history.csv";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)
+}
+function stats(){
+let rows=data.slice(0,Number($("period").value));
+let freq=Array(40).fill(0),miss=Array(40).fill(rows.length);
+let odd=0,big=0,sum=0,pairs=0;
+rows.forEach((r,i)=>{
+r.nums.forEach(n=>{freq[n]++;if(miss[n]===rows.length)miss[n]=i;if(n%2)odd++;if(n>=20)big++;sum+=n});
+for(let j=1;j<5;j++)if(r.nums[j]===r.nums[j-1]+1)pairs++;
+});
+let rank=Array.from({length:39},(_,i)=>i+1).sort((a,b)=>freq[b]-freq[a]||a-b);
+return {rows,freq,miss,odd,big,sum,pairs,rank}
+}
+function balls(a){return a.map(n=>'<span class="ball">'+String(n).padStart(2,"0")+'</span>').join("")}
+function analyze(){
+if(!data.length)return alert("請先匯入歷史資料");
+let s=stats(),t=s.rows.length;
+let missing=[...s.rank].sort((a,b)=>s.miss[b]-s.miss[a]);
+$("analysis").innerHTML='<div class="result">實際分析：'+t+'期<br>奇數：'+s.odd+'　偶數：'+(t*5-s.odd)+'<br>大號：'+s.big+'　小號：'+(t*5-s.big)+'<br>平均和值：'+(s.sum/t).toFixed(1)+'<br>連號配對：'+s.pairs+'</div><h4>🔥 熱門前10號</h4>'+balls(s.rank.slice(0,10))+'<h4>❄️ 冷門前10號</h4>'+balls(s.rank.slice(-10).reverse())+'<h4>⏳ 遺漏最高前10號</h4>'+balls(missing.slice(0,10));
+}
+function predict(){
+if(data.length<10)return alert("至少需要10期歷史資料");
+let s=stats();
+let missing=[...s.rank].sort((a,b)=>s.miss[b]-s.miss[a]);
+let groups=[],seen=new Set(),tries=0;
+while(groups.length<5&&tries++<200){
+let pool=[...s.rank.slice(0,15),...missing.slice(0,15),...s.rank.slice(-15)];
+let nums=[];
+while(nums.length<5){
+let n=pool[Math.floor(Math.random()*pool.length)];
+if(!nums.includes(n))nums.push(n)
+}
+nums.sort((a,b)=>a-b);
+let key=nums.join("-");
+if(!seen.has(key)){seen.add(key);groups.push(nums)}
+}
+$("prediction").innerHTML=groups.map((g,i)=>'<div class="result"><b>第'+(i+1)+'組</b><br>'+balls(g)+'</div>').join("")
+}
+show();
+</script>
+</body>
+</html>
